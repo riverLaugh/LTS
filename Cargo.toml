@@ -5,8 +5,8 @@ version = "0.1.0"
 authors = ["Kornel <kornel@geekhood.net>"]
 license = "CC0-1.0"
 readme = "README.md"
-keywords = ["long-term-support", "lts", "crates-io", "index", "backwards-compatibility"]
-categories = ["development-tools::cargo-plugins", "configuration"]
+keywords = ["long-term-support", "LTS", "crates-io", "index", "back-compat"]
+categories = ["development-tools::cargo-plugins", "config"]
 homepage = "https://lib.rs/lts"
 repository = "https://gitlab.com/kornelski/LTS"
 
