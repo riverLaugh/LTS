@@ -44,3 +44,5 @@ cargo update
 to update `Cargo.lock` from the stale registry. To go back to the future, delete `[source.crates-io] replace-with = …` from `./.cargo/config`.
 
 You can set `CARGO_MANIFEST_DIR` environmental variable to modify other than the current directory. `cargo lts` assumes the index is in `$CARGO_HOME/registry/index/github.com-1ecc6299db9ec823/.git`. You can set `CARGO_REGISTRY_GIT_DIR` to reference another checkout of the index.
+
+`cargo lts prefetch` fetches the registry without altering the local project. Useful to cache registry state in Docker images.
