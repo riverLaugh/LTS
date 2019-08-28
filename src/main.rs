@@ -91,7 +91,7 @@ fn get_cargo_home() -> PathBuf {
     env::var_os("CARGO_HOME").map(PathBuf::from).or_else(|| env::home_dir().map(|d| d.join(".cargo"))).expect("$CARGO_HOME not set")
 }
 
-fn get_root() -> PathBuf {
+fn get_cargo_manifest_dir() -> PathBuf {
     if let Some(dir) = env::var_os("CARGO_MANIFEST_DIR") {
         return PathBuf::from(dir);
     }
@@ -109,8 +109,7 @@ fn get_root() -> PathBuf {
     root_dir
 }
 
-fn get_cutoff_date() -> (String, String) {
-    let arg = env::args().skip(1).filter(|a| a != "lts" && !a.starts_with('-')).next();
+fn get_cutoff_date(arg: Option<&str>) -> (String, String) {
     if let Some(arg) = arg {
         let arg_dot = format!("{}.", arg);
         if arg.starts_with("20") && arg.contains('-') {
@@ -131,6 +130,7 @@ fn get_cutoff_date() -> (String, String) {
     }
     let ver_str = check(Command::new("rustc").arg("--version").output().unwrap());
     let arg = ver_str.splitn(3, ' ').skip(1).next().expect("rustc version ???");
+    let arg = arg.splitn(2, '-').next().unwrap();
     for &(date, ver) in VERSIONS.iter() {
         if ver == arg {
             return (date.to_owned(), ver.to_owned());
@@ -141,9 +141,12 @@ fn get_cutoff_date() -> (String, String) {
 }
 
 fn main() {
+    let arg = env::args().skip(1).filter(|a| a != "lts" && !a.starts_with('-')).next();
+    let arg = arg.as_ref().map(|s| s.as_str());
+    let prefetch_only = arg == Some("prefetch");
+
     let home = get_cargo_home();
-    let root = get_root();
-    let (cutoff, rust_vers) = get_cutoff_date();
+    let (cutoff, rust_vers) = get_cutoff_date(arg);
 
     let git_dir = env::var_os("CARGO_REGISTRY_GIT_DIR").map(PathBuf::from).unwrap_or_else(|| home.join("registry/index/github.com-1ecc6299db9ec823/.git"));
 
@@ -156,6 +159,11 @@ fn main() {
         check(git(&git_dir, &["fetch", "https://github.com/rust-lang/crates.io-index", "snapshot-2018-09-26:snapshot-2018-09-26"]));
     }
 
+    if prefetch_only {
+        return;
+    }
+
+    let root = get_cargo_manifest_dir();
     let last_commit_hash = check(git(&git_dir, &["log", "--all", "-1", "--format=%H", "--until", &cutoff]));
 
     let treeish = format!("{}^{{tree}}", last_commit_hash);
