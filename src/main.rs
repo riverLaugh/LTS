@@ -200,8 +200,10 @@ fn main() {
         let mut skipping = false;
         for line in f.lines() {
             let line = line.unwrap();
-            if line.starts_with('[') {
-                skipping = line.starts_with("[source.crates-io]") || line.starts_with("[source.lts-repo-at-");
+            if line.starts_with('[') || line.starts_with("# delete this") {
+                skipping = line.starts_with("[source.crates-io]")
+                    || line.starts_with("# delete this")
+                    || line.starts_with("[source.lts-repo-");
             }
 
             if !skipping {
@@ -213,14 +215,13 @@ fn main() {
 
     let fork_repo_abs = fs::canonicalize(&fork_repo_git_dir).unwrap();
 
-    config_toml.push_str(&format!("
-# delete this to restore to the default registry
+    config_toml.push_str(&format!("# delete this to restore to the default registry
 [source.crates-io]
-replace-with = '{fork_name}'
+replace-with = 'lts-repo-replacement'
 
-[source.{fork_name}] # {cutoff}
+[source.lts-repo-replacement] # {cutoff}
 registry = 'file://{path}'
-", fork_name = fork_name, cutoff = cutoff, path = fork_repo_abs.to_str().unwrap()));
+", cutoff = cutoff, path = fork_repo_abs.to_str().unwrap()));
 
     let mut out = File::create(&config_path).expect("Writing .cargo/config");
     out.write_all(config_toml.as_bytes()).unwrap();
