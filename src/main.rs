@@ -10,6 +10,10 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::process::exit;
 use std::process::Output;
+#[allow(deprecated)]
+use std::hash::{Hash, Hasher, SipHasher};
+#[cfg(unix)]
+use std::os::unix::fs::symlink;
 
 static VERSIONS: [(&'static str, &'static str); 53] = [
     ("2015-05-15", "1.0.0"),
@@ -140,6 +144,53 @@ fn get_cutoff_date(arg: Option<&str>) -> (String, String) {
     exit(1);
 }
 
+
+#[derive(Hash)]
+struct CargoCompatibleSourceId<'a> {
+    kind: Kind,
+    url: &'a str,
+}
+
+#[derive(Hash)]
+enum Kind {
+    _1,
+    _2,
+    Registry,
+}
+
+#[allow(deprecated)]
+pub fn short_hash<H: Hash>(hashable: &H) -> String {
+    let mut hasher = SipHasher::new_with_keys(0, 0);
+    hashable.hash(&mut hasher);
+    let num = hasher.finish();
+    format!("{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        (num >> 0) as u8,
+        (num >> 8) as u8,
+        (num >> 16) as u8,
+        (num >> 24) as u8,
+        (num >> 32) as u8,
+        (num >> 40) as u8,
+        (num >> 48) as u8,
+        (num >> 56) as u8,
+    )
+}
+
+// Because the crate files are actually the same, it makes sense to share them
+fn make_cache_shared(home: &Path, url: &str) {
+    let hash = short_hash(&CargoCompatibleSourceId {
+        url: url,
+        kind: Kind::Registry,
+    });
+    let fork_cache_dir = home.join(format!("registry/cache/-{}", hash));
+    let git_cache_dir = home.join("registry/cache/github.com-1ecc6299db9ec823");
+    #[cfg(unix)]
+    let _ = symlink(git_cache_dir, fork_cache_dir);
+    let fork_src_dir = home.join(format!("registry/src/-{}", hash));
+    let git_src_dir = home.join("registry/src/github.com-1ecc6299db9ec823");
+    #[cfg(unix)]
+    let _ = symlink(git_src_dir, fork_src_dir);
+}
+
 fn main() {
     let arg = env::args().skip(1).filter(|a| a != "lts" && !a.starts_with('-')).next();
     let arg = arg.as_ref().map(|s| s.as_str());
@@ -214,17 +265,28 @@ fn main() {
     }
 
     let fork_repo_abs = fs::canonicalize(&fork_repo_git_dir).unwrap();
+    let fork_url = format!("file://{}", fork_repo_abs.display());
+
+    make_cache_shared(&home, &fork_url);
 
     config_toml.push_str(&format!("# delete this to restore to the default registry
 [source.crates-io]
-replace-with = 'lts-repo-replacement'
+replace-with = '{fork_name}'
 
-[source.lts-repo-replacement] # {cutoff}
-registry = 'file://{path}'
-", cutoff = cutoff, path = fork_repo_abs.to_str().unwrap()));
+[source.{fork_name}] # {cutoff}
+registry = '{fork_url}'
+", fork_name = fork_name, cutoff = cutoff, fork_url = fork_url));
 
     let mut out = File::create(&config_path).expect("Writing .cargo/config");
     out.write_all(config_toml.as_bytes()).unwrap();
 
     println!("Set {} to use registry state from {} ({})", config_path.display(), cutoff, rust_vers);
+}
+
+#[test]
+fn hash() {
+    assert_eq!("1ecc6299db9ec823", short_hash(&CargoCompatibleSourceId {
+        url: "https://github.com/rust-lang/crates.io-index",
+        kind: Kind::Registry,
+    }));
 }
