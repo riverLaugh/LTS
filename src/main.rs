@@ -1,21 +1,18 @@
+extern crate lts;
+
+use lts::LTS;
 use std::env;
-use std::ffi::OsStr;
 use std::fs::File;
 use std::fs;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Write;
-use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::exit;
 use std::process::Output;
-#[allow(deprecated)]
-use std::hash::{Hash, Hasher, SipHasher};
-#[cfg(unix)]
-use std::os::unix::fs::symlink;
 
-static VERSIONS: [(&'static str, &'static str); 53] = [
+static RUST_RELEASE_DATES: [(&'static str, &'static str); 53] = [
     ("2015-05-15", "1.0.0"),
     ("2015-06-25", "1.1.0"),
     ("2015-08-07", "1.2.0"),
@@ -71,15 +68,6 @@ static VERSIONS: [(&'static str, &'static str); 53] = [
     ("2019-09-20", "1.38.0"),
 ];
 
-fn git<S>(git: &Path, args: &[S]) -> Output where S: AsRef<OsStr>
-{
-    let mut cmd = Command::new("git");
-    cmd.arg("--git-dir");
-    cmd.arg(git);
-    cmd.args(args);
-    cmd.output().unwrap()
-}
-
 fn check(output: Output) -> String {
     let stdout = String::from_utf8_lossy(&output.stdout);
     if !output.status.success() {
@@ -88,11 +76,6 @@ fn check(output: Output) -> String {
         exit(1);
     }
     stdout.trim().to_string()
-}
-
-#[allow(deprecated)]
-fn get_cargo_home() -> PathBuf {
-    env::var_os("CARGO_HOME").map(PathBuf::from).or_else(|| env::home_dir().map(|d| d.join(".cargo"))).expect("$CARGO_HOME not set")
 }
 
 fn get_cargo_manifest_dir() -> PathBuf {
@@ -117,7 +100,7 @@ fn get_cutoff_date(arg: Option<&str>) -> (String, String) {
     if let Some(arg) = arg {
         let arg_dot = format!("{}.", arg);
         if arg.starts_with("20") && arg.contains('-') {
-            for &(date, ver) in VERSIONS.iter() {
+            for &(date, ver) in RUST_RELEASE_DATES.iter() {
                 if date >= &arg {
                     return (arg.to_owned(), ver.to_owned());
                 }
@@ -125,7 +108,7 @@ fn get_cutoff_date(arg: Option<&str>) -> (String, String) {
             return (arg.to_owned(), "<date>".into());
         }
         if arg.contains('.') {
-            for &(date, ver) in VERSIONS.iter() {
+            for &(date, ver) in RUST_RELEASE_DATES.iter() {
                 if ver == arg || ver.starts_with(&arg_dot) {
                     return (date.to_owned(), ver.to_owned());
                 }
@@ -135,7 +118,7 @@ fn get_cutoff_date(arg: Option<&str>) -> (String, String) {
     let ver_str = check(Command::new("rustc").arg("--version").output().unwrap());
     let arg = ver_str.splitn(3, ' ').skip(1).next().expect("rustc version ???");
     let arg = arg.splitn(2, '-').next().unwrap();
-    for &(date, ver) in VERSIONS.iter() {
+    for &(date, ver) in RUST_RELEASE_DATES.iter() {
         if ver == arg {
             return (date.to_owned(), ver.to_owned());
         }
@@ -145,103 +128,37 @@ fn get_cutoff_date(arg: Option<&str>) -> (String, String) {
 }
 
 
-#[derive(Hash)]
-struct CargoCompatibleSourceId<'a> {
-    kind: Kind,
-    url: &'a str,
-}
-
-#[derive(Hash)]
-enum Kind {
-    _1,
-    _2,
-    Registry,
-}
-
-#[allow(deprecated)]
-pub fn short_hash<H: Hash>(hashable: &H) -> String {
-    let mut hasher = SipHasher::new_with_keys(0, 0);
-    hashable.hash(&mut hasher);
-    let num = hasher.finish();
-    format!("{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        (num >> 0) as u8,
-        (num >> 8) as u8,
-        (num >> 16) as u8,
-        (num >> 24) as u8,
-        (num >> 32) as u8,
-        (num >> 40) as u8,
-        (num >> 48) as u8,
-        (num >> 56) as u8,
-    )
-}
-
-// Because the crate files are actually the same, it makes sense to share them
-fn make_cache_shared(home: &Path, url: &str) {
-    let hash = short_hash(&CargoCompatibleSourceId {
-        url: url,
-        kind: Kind::Registry,
-    });
-    let fork_cache_dir = home.join(format!("registry/cache/-{}", hash));
-    let git_cache_dir = home.join("registry/cache/github.com-1ecc6299db9ec823");
-    #[cfg(unix)]
-    let _ = symlink(git_cache_dir, fork_cache_dir);
-    let fork_src_dir = home.join(format!("registry/src/-{}", hash));
-    let git_src_dir = home.join("registry/src/github.com-1ecc6299db9ec823");
-    #[cfg(unix)]
-    let _ = symlink(git_src_dir, fork_src_dir);
-}
-
 fn main() {
     let arg = env::args().skip(1).filter(|a| a != "lts" && !a.starts_with('-')).next();
     let arg = arg.as_ref().map(|s| s.as_str());
     let prefetch_only = arg == Some("prefetch");
 
-    let home = get_cargo_home();
     let (cutoff, rust_vers) = get_cutoff_date(arg);
 
-    let git_dir = env::var_os("CARGO_REGISTRY_GIT_DIR").map(PathBuf::from).unwrap_or_else(|| home.join("registry/index/github.com-1ecc6299db9ec823/.git"));
+    let lts = LTS::new(env::var_os("CARGO_REGISTRY_GIT_DIR").map(PathBuf::from));
 
-    if !git_dir.exists() {
-        println!("{} doesn't exist. Set CARGO_REGISTRY_GIT_DIR to cargo index .git dir", git_dir.display());
+    if !lts.git_dir().exists() {
+        println!("{} doesn't exist. Set CARGO_REGISTRY_GIT_DIR to cargo index .git dir", lts.git_dir().display());
         exit(1);
     }
 
-    if !git(&git_dir, &["rev-parse", "snapshot-2018-09-26", "--"]).status.success() {
-        check(git(&git_dir, &["fetch", "https://github.com/rust-lang/crates.io-index", "snapshot-2018-09-26:snapshot-2018-09-26"]));
-    }
+    lts.fetch().unwrap();
 
     if prefetch_only {
         return;
     }
 
     let root = get_cargo_manifest_dir();
-    let last_commit_hash = check(git(&git_dir, &["log", "--all", "-1", "--format=%H", "--until", &cutoff]));
-
-    let treeish = format!("{}^{{tree}}", last_commit_hash);
-    let msg = format!("Registry at {}", cutoff);
-    // create a new commit that is a snapshot of that commit
-    let new_head = check(git(&git_dir, &["commit-tree", &treeish, "-m", &msg]));
-
-    let fork_name = format!("lts-repo-at-{}", last_commit_hash);
-
-    // git requires exposing a commit as a ref in order to clone it
-    if !git(&git_dir, &["branch", &fork_name, &new_head]).status.success() {
-        let refname = format!("refs/heads/{}", fork_name);
-        check(git(&git_dir, &["update-ref", &refname, &new_head]));
-    }
 
     // make a new repo with just that commit
     let cargo_local_dir = root.join(".cargo");
     let _ = fs::create_dir(&cargo_local_dir);
 
-    let fork_repo_git_dir = cargo_local_dir.join(&fork_name);
-    let _ = fs::remove_dir_all(&fork_repo_git_dir); // just in case
+    let branch = lts.cut_branch_at(&cutoff).unwrap();
 
-    check(Command::new("git").args(&["clone", "--single-branch", "--bare", "--branch", &fork_name]).arg(&git_dir).arg(&fork_repo_git_dir).output().unwrap());
+    let fork_repo_git_dir = cargo_local_dir.join(&branch.name);
 
-    // do fixups, so that cargo can find proper dir
-    check(git(&fork_repo_git_dir, &["update-ref", "HEAD", &new_head]));
-    check(git(&fork_repo_git_dir, &["branch", "master", &new_head]));
+    let fork_url = lts.clone_to(&branch, &fork_repo_git_dir, true).unwrap();
 
     let config_path = cargo_local_dir.join("config");
     let mut config_toml = String::new();
@@ -264,29 +181,16 @@ fn main() {
         }
     }
 
-    let fork_repo_abs = fs::canonicalize(&fork_repo_git_dir).unwrap();
-    let fork_url = format!("file://{}", fork_repo_abs.display());
-
-    make_cache_shared(&home, &fork_url);
-
     config_toml.push_str(&format!("# delete this to restore to the default registry
 [source.crates-io]
 replace-with = '{fork_name}'
 
 [source.{fork_name}] # {cutoff}
 registry = '{fork_url}'
-", fork_name = fork_name, cutoff = cutoff, fork_url = fork_url));
+", fork_name = branch.name, cutoff = cutoff, fork_url = fork_url));
 
     let mut out = File::create(&config_path).expect("Writing .cargo/config");
     out.write_all(config_toml.as_bytes()).unwrap();
 
     println!("Set {} to use registry state from {} ({})", config_path.display(), cutoff, rust_vers);
-}
-
-#[test]
-fn hash() {
-    assert_eq!("1ecc6299db9ec823", short_hash(&CargoCompatibleSourceId {
-        url: "https://github.com/rust-lang/crates.io-index",
-        kind: Kind::Registry,
-    }));
 }

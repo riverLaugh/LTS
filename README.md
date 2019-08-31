@@ -11,6 +11,8 @@ You can set crates-io registry state per project to contain only crates that are
  * **Rust 1.13** or later (this is so old, that even Debian has it),
  * `git` command in `PATH`.
 
+Tested on macOS and Linux.
+
 ## Current vs future implementation
 
 The current implementation just rewinds the crates-io registry to a previous commit from a date of release of a specific Rust version, and configures Cargo to use the truncated registry. This means that the registry won't contain any newer crates, even if they'd be compatible.
