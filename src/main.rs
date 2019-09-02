@@ -7,6 +7,7 @@ use std::fs;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Write;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::exit;
@@ -133,13 +134,19 @@ fn main() {
     let arg = arg.as_ref().map(|s| s.as_str());
     let prefetch_only = arg == Some("prefetch");
 
-    let (cutoff, rust_vers) = get_cutoff_date(arg);
-
     let lts = LTS::new(env::var_os("CARGO_REGISTRY_GIT_DIR").map(PathBuf::from));
 
     if !lts.git_dir().exists() {
         println!("{} doesn't exist. Set CARGO_REGISTRY_GIT_DIR to cargo index .git dir", lts.git_dir().display());
         exit(1);
+    }
+
+    let cargo_local_dir = prepare_cargo_dir();
+
+    if arg.map(|a| a.starts_with("https://")).unwrap_or(false) {
+        let url = arg.unwrap();
+        set_custom_index_url(&cargo_local_dir, "lts-repo-custom-url", url, "cargo lts override");
+        return;
     }
 
     lts.fetch().unwrap();
@@ -148,18 +155,27 @@ fn main() {
         return;
     }
 
-    let root = get_cargo_manifest_dir();
+    let (cutoff, rust_vers) = get_cutoff_date(arg);
 
     // make a new repo with just that commit
-    let cargo_local_dir = root.join(".cargo");
-    let _ = fs::create_dir(&cargo_local_dir);
-
     let branch = lts.cut_branch_at(&cutoff).unwrap();
 
     let fork_repo_git_dir = cargo_local_dir.join(&branch.name);
 
     let fork_url = lts.clone_to(&branch, &fork_repo_git_dir, true).unwrap();
 
+    set_custom_index_url(&cargo_local_dir, &branch.name, &fork_url, &format!("{} ({})", cutoff, rust_vers));
+}
+
+fn prepare_cargo_dir() -> PathBuf {
+    let root = get_cargo_manifest_dir();
+
+    let cargo_local_dir = root.join(".cargo");
+    let _ = fs::create_dir(&cargo_local_dir);
+    cargo_local_dir
+}
+
+fn set_custom_index_url(cargo_local_dir: &Path, fork_name: &str, fork_url: &str, description: &str) {
     let config_path = cargo_local_dir.join("config");
     let mut config_toml = String::new();
 
@@ -185,12 +201,12 @@ fn main() {
 [source.crates-io]
 replace-with = '{fork_name}'
 
-[source.{fork_name}] # {cutoff}
+[source.{fork_name}] # {description}
 registry = '{fork_url}'
-", fork_name = branch.name, cutoff = cutoff, fork_url = fork_url));
+", fork_name = fork_name, description = description, fork_url = fork_url));
 
     let mut out = File::create(&config_path).expect("Writing .cargo/config");
     out.write_all(config_toml.as_bytes()).unwrap();
 
-    println!("Set {} to use registry state from {} ({})", config_path.display(), cutoff, rust_vers);
+    println!("Set {} to use registry state from {}", config_path.display(), description);
 }

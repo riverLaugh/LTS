@@ -17,7 +17,7 @@ Tested on macOS and Linux.
 
 The current implementation just rewinds the crates-io registry to a previous commit from a date of release of a specific Rust version, and configures Cargo to use the truncated registry. This means that the registry won't contain any newer crates, even if they'd be compatible.
 
-A future implementation will use a specially-filtered custom registry, allowing use of all crate versions as long as they're compatible.
+A future implementation will use a specially-filtered custom registry, allowing use of all crate versions as long as they're compatible. You can preview it here: https://github.com/kornelski/crates.io-index
 
 ## Installation
 
@@ -48,3 +48,16 @@ to update `Cargo.lock` from the stale registry. To go back to the future, delete
 You can set `CARGO_MANIFEST_DIR` environmental variable to modify other than the current directory. `cargo lts` assumes the index is in `$CARGO_HOME/registry/index/github.com-1ecc6299db9ec823/.git`. You can set `CARGO_REGISTRY_GIT_DIR` to reference another checkout of the index.
 
 `cargo lts prefetch` fetches the registry without altering the local project. Useful to cache registry state in Docker images.
+
+
+### Custom URL
+
+Alternatively, you can use it to set a custom registry URL:
+
+```sh
+cargo lts https://github.com/kornelski/crates.io-index
+cargo update
+```
+
+In addition to configuring the URL replacement, it will also symlink the replacement registry's cache dir to crates-io cache dir, to avoid duplicating downloads (obviously, use it only for registries that are subsets of crates-io to avoid collisions).
+
