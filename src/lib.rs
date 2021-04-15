@@ -147,6 +147,11 @@ impl LTS {
 
 fn git(git_dir: &Path, args: &[&str]) -> io::Result<String> {
     let out = Command::new("git")
+        .env("GIT_AUTHOR_NAME", "LTS")
+        .env("GIT_COMMITTER_NAME", "LTS")
+        .env("GIT_AUTHOR_EMAIL", "lts@lib.rs")
+        .env("GIT_COMMITTER_EMAIL", "lts@lib.rs")
+        .env("GIT_ASKPASS", "true")
         .arg("--git-dir")
         .arg(git_dir)
         .args(args)
