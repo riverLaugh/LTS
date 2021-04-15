@@ -156,7 +156,11 @@ fn main() {
 
     if !lts.git_dir().exists() {
         println!("{} doesn't exist. Set CARGO_REGISTRY_GIT_DIR to cargo index .git dir", lts.git_dir().display());
-        exit(1);
+        // makes the index as a side effect
+        let _ = Command::new("cargo").arg("search").arg("cargo-lts").output();
+        if !lts.git_dir().exists() {
+            exit(1);
+        }
     }
 
     let cargo_local_dir = prepare_cargo_dir();
