@@ -1,7 +1,7 @@
 [package]
 name = "lts"
 description = "Workaround for old Rust compiler versions. Makes Cargo see only old dependency versions, which should be compatible with old compiler versions."
-version = "0.1.5"
+version = "0.1.6"
 authors = ["Kornel <kornel@geekhood.net>"]
 license = "CC0-1.0"
 readme = "README.md"
@@ -13,3 +13,6 @@ repository = "https://gitlab.com/kornelski/LTS"
 [[bin]]
 name = "cargo-lts"
 path = "src/main.rs"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
