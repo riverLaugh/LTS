@@ -8,7 +8,7 @@ You can set crates-io registry state per project to contain only crates that are
 
 ## Requirements
 
- * **Rust 1.13** or later (this is so old, that even Debian has it),
+ * **Rust 1.14** or later (this is so old, that even Debian has it),
  * `git` command in `PATH`.
 
 Tested on macOS and Linux.
@@ -61,3 +61,11 @@ cargo update
 
 In addition to configuring the URL replacement, it will also symlink the replacement registry's cache dir to crates-io cache dir, to avoid duplicating downloads (obviously, use it only for registries that are subsets of crates-io to avoid collisions).
 
+
+### Disabling the registry override
+
+```sh
+cargo lts unset
+```
+
+or you can edit `.cargo/config` yourself and remove `replace-with` line.

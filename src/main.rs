@@ -152,11 +152,12 @@ fn main() {
     let arg = env::args().skip(1).filter(|a| a != "lts" && !a.starts_with('-')).next();
     let arg = arg.as_ref().map(|s| s.as_str());
     let prefetch_only = arg == Some("prefetch");
+    let unset = arg == Some("reset") || arg == Some("unset");
 
     let lts = LTS::new(env::var_os("CARGO_REGISTRY_GIT_DIR").map(PathBuf::from));
 
     if !lts.git_dir().exists() {
-        println!("{} doesn't exist. Set CARGO_REGISTRY_GIT_DIR to cargo index .git dir", lts.git_dir().display());
+        println!("{} doesn't exist. Asking Cargo to fetch it.\nAlternatively, you can set CARGO_REGISTRY_GIT_DIR to the cargo index .git dir", lts.git_dir().display());
         // makes the index as a side effect
         let _ = Command::new("cargo").arg("install").arg("libc").output();
         if !lts.git_dir().exists() {
@@ -165,6 +166,11 @@ fn main() {
     }
 
     let cargo_local_dir = prepare_cargo_dir();
+
+    if unset {
+        unset_custom_index_url(&cargo_local_dir);
+        return;
+    }
 
     if arg.map(|a| a.starts_with("https://")).unwrap_or(false) {
         let url = arg.unwrap();
@@ -178,7 +184,6 @@ fn main() {
     if prefetch_only {
         return;
     }
-
 
     // make a new repo with just that commit
     let branch = lts.cut_branch_at(cutoff).unwrap();
@@ -198,27 +203,51 @@ fn prepare_cargo_dir() -> PathBuf {
     cargo_local_dir
 }
 
-fn set_custom_index_url(cargo_local_dir: &Path, fork_name: &str, fork_url: &str, description: &str) {
+fn unset_custom_index_url(cargo_local_dir: &Path) {
     let config_path = cargo_local_dir.join("config");
-    let mut config_toml = String::new();
-
     if config_path.exists() {
-        let f = BufReader::new(File::open(&config_path).expect("can't read .cargo/config"));
-        let mut skipping = false;
-        for line in f.lines() {
-            let line = line.unwrap();
-            if line.starts_with('[') || line.starts_with("# delete this") {
-                skipping = line.starts_with("[source.crates-io]")
-                    || line.starts_with("# delete this")
-                    || line.starts_with("[source.lts-repo-");
-            }
-
-            if !skipping {
-                config_toml.push_str(&line);
-                config_toml.push('\n');
-            }
+        let config_toml = filtered_config_toml(&config_path);
+        if config_toml.trim().is_empty() {
+            std::fs::remove_file(&config_path).expect("Deleting .cargo/config");
+        } else {
+            let mut out = File::create(&config_path).expect("Writing .cargo/config");
+            out.write_all(config_toml.as_bytes()).unwrap();
         }
     }
+
+    println!("Removed index change from {}", config_path.display());
+}
+
+fn filtered_config_toml(config_path: &Path) -> String {
+    let mut config_toml = String::new();
+
+    let f = BufReader::new(File::open(config_path).expect("can't read .cargo/config"));
+    let mut skipping = false;
+    for line in f.lines() {
+        let line = line.unwrap();
+        if line.starts_with('[') || line.starts_with("# delete this") {
+            skipping = line.starts_with("[source.crates-io]")
+                || line.starts_with("# delete this")
+                || line.starts_with("[source.lts-repo-");
+        }
+
+        if !skipping {
+            config_toml.push_str(&line);
+            config_toml.push('\n');
+        }
+    }
+
+    config_toml
+}
+
+fn set_custom_index_url(cargo_local_dir: &Path, fork_name: &str, fork_url: &str, description: &str) {
+    let config_path = cargo_local_dir.join("config");
+
+    let mut config_toml = if config_path.exists() {
+        filtered_config_toml(&config_path)
+    } else {
+        String::new()
+    };
 
     config_toml.push_str(&format!("# delete this to restore to the default registry
 [source.crates-io]

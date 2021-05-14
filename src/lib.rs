@@ -25,7 +25,7 @@ use std::os::unix::fs::symlink;
 mod minidate;
 pub use minidate::Date;
 
-const SNAPSHOT_BRANCHES: &[&str; 6] = &[
+const SNAPSHOT_BRANCHES: &'static [&'static str; 6] = &[
     "snapshot-2018-09-26",
     "snapshot-2019-10-17",
     "snapshot-2020-03-25",
