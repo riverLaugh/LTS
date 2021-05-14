@@ -22,7 +22,7 @@ use std::process::Output;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 
-mod hash;
+mod cargo_repository_hash;
 
 /// Main library handle for `CARGO_HOME`
 pub struct LTS {
@@ -133,7 +133,7 @@ impl LTS {
 
     // Because the crate files are actually the same, it makes sense to share them
     fn make_cache_shared(&self, url: &str) {
-        let hash = hash::short_hash(url);
+        let hash = cargo_repository_hash::short_hash(url);
         let fork_cache_dir = self.home.join(format!("registry/cache/-{}", hash));
         let git_cache_dir = self.home.join("registry/cache/github.com-1ecc6299db9ec823");
         #[cfg(unix)]
