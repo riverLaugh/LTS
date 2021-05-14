@@ -22,6 +22,18 @@ use std::process::Output;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 
+mod minidate;
+pub use minidate::Date;
+
+const SNAPSHOT_BRANCHES: &[&str; 6] = &[
+    "snapshot-2018-09-26",
+    "snapshot-2019-10-17",
+    "snapshot-2020-03-25",
+    "snapshot-2020-08-04",
+    "snapshot-2020-11-20",
+    "snapshot-2021-05-05",
+];
+
 mod cargo_repository_hash;
 
 /// Main library handle for `CARGO_HOME`
@@ -49,12 +61,18 @@ impl LTS {
         }
     }
 
-    /// Ensure old snapshot-2018-09-26 is available.
+    /// Ensure an old snapshot is available.
     ///
     /// Without calling this any attempt to use older revision may fail.
-    pub fn fetch(&self) -> io::Result<()> {
-        if !self.git(&["rev-parse", "snapshot-2018-09-26", "--"]).is_ok() {
-            self.git(&["fetch", "https://github.com/rust-lang/crates.io-index", "snapshot-2018-09-26:snapshot-2018-09-26"])?;
+    pub fn fetch(&self, for_date: Date) -> io::Result<()> {
+        let needed_snapshot = SNAPSHOT_BRANCHES.iter().find(|s| {
+            let snap_date = Date::from_str(&s[9..]).unwrap();
+            snap_date >= for_date
+        });
+        if let Some(branch_name) = needed_snapshot {
+            if !self.git(&["rev-parse", branch_name, "--"]).is_ok() {
+                self.git(&["fetch", "https://github.com/rust-lang/crates.io-index", &format!("{s}:{s}", s = branch_name)])?;
+            }
         }
         Ok(())
     }
@@ -62,8 +80,9 @@ impl LTS {
     /// Create a new branch in the local Cargo registry clone.
     ///
     /// Branch will contain only commits up to given date YYYY-MM-DD
-    pub fn cut_branch_at(&self, cutoff: &str) -> io::Result<Branch> {
-        let last_commit_hash = self.git(&["log", "--all", "-1", "--format=%H", "--until", cutoff])?;
+    pub fn cut_branch_at(&self, cutoff_date: Date) -> io::Result<Branch> {
+        let cutoff = cutoff_date.to_string();
+        let last_commit_hash = self.git(&["log", "--all", "-1", "--format=%H", "--until", &cutoff])?;
         let treeish = format!("{}^{{tree}}", last_commit_hash);
         let msg = format!("Registry at {}", cutoff);
         // create a new commit that is a snapshot of that commit
