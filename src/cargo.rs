@@ -47,6 +47,7 @@ impl CargoConfig {
         self.dot_cargo_dir.join("cargo-lts-local-registry-fork")
     }
 
+    // checkout must exist
     fn repo_path_as_url(repo_path: &Path) -> io::Result<String> {
         let repo_path = fs::canonicalize(repo_path)?;
         Ok(format!("file://{}", repo_path.display()).replace(' ', "%20"))

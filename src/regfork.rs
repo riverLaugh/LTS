@@ -57,6 +57,7 @@ const DEFAULT_YANKED: &'static [(&'static str, &'static str)] = &[
     ("pkg-config", "<0.3.9"),
     ("plugin", "<0.2.6"),
     ("podio", "<0.1.4"),
+    ("proc-macro-hack", "<0.5.3,0.5"),
     ("rand", "<0.3.15"),
     ("rand_isaac", "=0.1.0"),
     ("route-recognizer", "<0.1.12"),
@@ -98,7 +99,12 @@ impl ForkedRegistryIndex {
     }
 
     pub fn deinit(&self) -> io::Result<()> {
+        println!("Deleting {}", self.git_checkout.display());
         let _ = fs::remove_dir_all(&self.git_checkout);
+        if let Some(path) = CargoConfig::cargo_private_custom_git_repo_path(&self.git_checkout) {
+            println!("Deleting {}", path.display());
+            let _ = fs::remove_dir_all(path);
+        }
         Ok(())
     }
 
@@ -310,14 +316,15 @@ impl ForkedRegistryIndex {
         // Cargo is super slow at cloning from one dir (./fork) to another (~/.cargo/regstry),
         // and native git can just hardlink, so do that.
         if let Some(path) = CargoConfig::cargo_private_custom_git_repo_path(&self.git_checkout) {
-            if !path.exists() {
-                let _ = Command::new("git") // this is optional optimization
-                    .arg("clone")
-                    .arg("--bare")
-                    .arg(&self.git_checkout)
-                    .arg(path)
-                    .status()?;
-            }
+            // the hash is wrong?
+            // if !path.exists() {
+            //     let _ = Command::new("git") // this is optional optimization
+            //         .arg("clone")
+            //         .arg("--bare")
+            //         .arg(&self.git_checkout)
+            //         .arg(path)
+            //         .status()?;
+            // }
         }
         Ok(())
     }
