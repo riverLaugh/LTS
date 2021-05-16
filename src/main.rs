@@ -52,9 +52,7 @@ fn run() -> io::Result<()> {
 
             set_index_source_override(&dot_cargo_dir, &local_repo_copy_dir)?;
 
-            for spec in &specs {
-                set_yanked_state(&local_repo_copy_dir, spec)?
-            }
+            set_yanked_state(&local_repo_copy_dir, &specs)?
         }
     }
 
@@ -172,35 +170,73 @@ fn parse_yankspecs<I>(args: I, yank: bool) -> Vec<YankSpec> where I: Iterator<It
     }).collect()
 }
 
-fn set_yanked_state(from_repo: &Path, spec: &YankSpec) -> io::Result<()> {
-    let crate_file = crate_path(from_repo, &spec.crate_name);
-    let jsons = read(&crate_file)?;
-    let mut lines_out = Vec::with_capacity(jsons.len());
-    let mut modified = false;
-    for line1 in jsons.split(|&c| c == b'\n') {
-        if line1.is_empty() {
-            continue;
-        }
-        let tmp;
-        let mut line = line1;
-        if let Ok(mut ver) = serde_json::from_slice::<CrateVersion>(line) {
-            if ver.yanked != spec.yank {
-                if let Ok(semver) = SemVer::parse(&ver.vers) {
-                    if spec.range.matches(&semver) {
-                        ver.yanked = spec.yank;
-                        tmp = serde_json::to_vec(&ver).unwrap();
-                        line = &tmp;
-                        modified = true;
-                        println!("{} {} yanked = {}", spec.crate_name, ver.vers, spec.yank);
+fn set_yanked_state(from_repo_checkout_dir: &Path, specs: &[YankSpec]) -> io::Result<()> {
+    let mut any_modified = false;
+    for spec in specs {
+        let crate_file = crate_path(from_repo_checkout_dir, &spec.crate_name);
+        let jsons = read(&crate_file)?;
+        let mut lines_out = Vec::with_capacity(jsons.len());
+        let mut modified = false;
+        for line1 in jsons.split(|&c| c == b'\n') {
+            if line1.is_empty() {
+                continue;
+            }
+            let tmp;
+            let mut line = line1;
+            if let Ok(mut ver) = serde_json::from_slice::<CrateVersion>(line) {
+                if ver.yanked != spec.yank {
+                    if let Ok(semver) = SemVer::parse(&ver.vers) {
+                        if spec.range.matches(&semver) {
+                            ver.yanked = spec.yank;
+                            tmp = serde_json::to_vec(&ver).unwrap();
+                            line = &tmp;
+                            modified = true;
+                            println!("{} {} yanked = {}", spec.crate_name, ver.vers, spec.yank);
+                        }
                     }
                 }
             }
+            lines_out.extend_from_slice(line);
+            lines_out.push(b'\n');
         }
-        lines_out.extend_from_slice(line);
-        lines_out.push(b'\n');
+        if modified {
+            any_modified = true;
+            write(&crate_file, &lines_out)?;
+            git_add(from_repo_checkout_dir, &crate_file)?;
+        }
     }
-    if modified {
-        write(&crate_file, &lines_out)?;
+    if any_modified {
+        git_commit(from_repo_checkout_dir)?;
+    }
+    Ok(())
+}
+
+fn git_add(checkout: &Path, file_path: &Path) -> io::Result<()> {
+    let res = Command::new("git")
+        .current_dir(checkout)
+        .arg("add")
+        .arg("--")
+        .arg(file_path)
+        .status()?;
+    if !res.success() {
+        return io_err("Failed to run git add");
+    }
+    Ok(())
+}
+
+fn git_commit(checkout: &Path) -> io::Result<()> {
+    let res = Command::new("git")
+        .current_dir(checkout)
+        .env("GIT_AUTHOR_NAME", "LTS")
+        .env("GIT_COMMITTER_NAME", "LTS")
+        .env("GIT_AUTHOR_EMAIL", "lts@lib.rs")
+        .env("GIT_COMMITTER_EMAIL", "lts@lib.rs")
+        .arg("commit")
+        .arg("-m")
+        .arg("cargo lts changes")
+        .status()?;
+    if !res.success() {
+        return io_err("Failed to commit changes");
     }
     Ok(())
 }
@@ -272,6 +308,7 @@ fn update_cloned_repo_fork(repo_path: &Path) -> io::Result<()> {
 
     let mut cmd = Command::new("git");
     cmd.current_dir(repo_path);
+    cmd.env("GIT_ASKPASS", "true");
     cmd.arg("fetch");
 
     if let Some(crates_io_index_git) = standard_crates_io_index_path() {
@@ -349,6 +386,7 @@ fn clone_crates_io_to_local_fork(dest: &Path) -> io::Result<()> {
 
 
     let mut cmd = Command::new("git");
+    cmd.env("GIT_ASKPASS", "true");
     cmd.arg("clone");
 
     if let Some(crates_io_index_git) = standard_crates_io_index_path() {
