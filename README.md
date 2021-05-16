@@ -63,3 +63,25 @@ cargo lts reset
 ```
 
 or you can edit `.cargo/config` yourself and remove the `replace-with` line.
+
+
+## But Why?
+
+### Isn't semver supposed to be perfect?
+
+Some crates are broken by accident or authors disagree what is a breaking change. For example, many Rust projects don't consider increase of minimum supported Rust version (MSRV) to be a semver-breaking change.
+
+### Why not lock versions using `[dependencies]`?
+
+It's possible to avoid problematic dependencies by setting strict version requirements, and/or strategically adding indirect dependencies to your crate's `Cargo.toml`. If you have to enforce this set of dependencies for all users of your crate, this is the least bad option.
+
+However, overly strict versions in `Cargo.toml` of libraries (e.g. `crate = "=1.2.3"`) can cause conflicts, which is very unpleasant for downstream users.
+
+With `cargo lts` you can generate `Cargo.lock` that has the dependencies you want, without changing `Cargo.toml`. This is suitable for patching dependency versions privately or temporarily, and doesn't pollute `Cargo.toml`.
+
+Overrides in `Cargo.toml` are project-specific, but yanking with `cargo lts yank` can be scripted and reused across projects.
+
+### Why not `[patch]`?
+
+The patch feature changes code of dependencies without changing versions. `cargo lts` changes versions of dependencies without changing their code.
+

@@ -9,6 +9,7 @@ use std::io::BufRead;
 use std::io::BufReader;
 use std::io;
 use std::path::{Path, PathBuf};
+use cargo_repository_hash;
 
 fn get_cargo_manifest_dir() -> PathBuf {
     if let Some(dir) = env::var_os("CARGO_MANIFEST_DIR") {
@@ -42,8 +43,13 @@ impl CargoConfig {
         }
     }
 
-    pub fn get_local_repo_copy_dir(&self) -> PathBuf {
+    pub fn default_forked_index_repository_path(&self) -> PathBuf {
         self.dot_cargo_dir.join("cargo-lts-local-registry-fork")
+    }
+
+    fn repo_path_as_url(repo_path: &Path) -> io::Result<String> {
+        let repo_path = fs::canonicalize(repo_path)?;
+        Ok(format!("file://{}", repo_path.display()).replace(' ', "%20"))
     }
 
     pub fn set_index_source_override(&self, repo_path: &Path) -> io::Result<()> {
@@ -55,8 +61,7 @@ impl CargoConfig {
             String::new()
         };
 
-        assert!(repo_path.is_absolute());
-        let repo_url = format!("file://{}", repo_path.display()).replace(' ', "%20");
+        let repo_url = Self::repo_path_as_url(repo_path)?;
 
         write!(&mut config_toml, "# delete this to restore to the default registry
     [source.crates-io]
@@ -69,7 +74,7 @@ impl CargoConfig {
         write(&config_path, config_toml.as_bytes())
     }
 
-    pub fn delete_source_override(&self) -> io::Result<()> {
+    pub fn unset_index_source_override(&self) -> io::Result<()> {
         let config_path = self.dot_cargo_dir.join("config");
 
         if config_path.exists() {
@@ -119,17 +124,32 @@ impl CargoConfig {
         Ok(())
     }
 
-    pub fn standard_crates_io_index_path() -> Option<PathBuf> {
+    pub fn cargo_private_crates_io_git_repo_path() -> Option<PathBuf> {
         let cargo_home = match get_cargo_home() {
             Some(p) => p,
             None => return None,
         };
+        assert!(cargo_home.is_absolute());
         let path = cargo_home.join("registry").join("index").join("github.com-1ecc6299db9ec823");
         if path.exists() {
             Some(path)
         } else {
             None
         }
+    }
+
+    pub fn cargo_private_custom_git_repo_path(repo_path: &Path) -> Option<PathBuf> {
+        let cargo_home = match get_cargo_home() {
+            Some(p) => p,
+            None => return None,
+        };
+        assert!(cargo_home.is_absolute());
+        let url = match Self::repo_path_as_url(repo_path) {
+            Ok(p) => p,
+            Err(_) => return None,
+        };
+        let hash = cargo_repository_hash::short_hash(&url);
+        Some(cargo_home.join("registry").join("index").join(format!("-{}", hash)))
     }
 }
 

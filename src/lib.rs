@@ -160,7 +160,7 @@ fn parse_yankspecs<I>(args: I, yank: bool) -> Vec<YankSpec> where I: Iterator<It
 }
 
 fn setup_if_needed(cargo: &CargoConfig) -> io::Result<ForkedRegistryIndex> {
-    let fork = ForkedRegistryIndex::new(cargo.get_local_repo_copy_dir());
+    let fork = ForkedRegistryIndex::new(cargo.default_forked_index_repository_path());
     fork.init()?;
     cargo.set_index_source_override(&fork.git_dir())?;
     Ok(fork)
@@ -181,13 +181,14 @@ fn force_update_crates_io_index() -> io::Result<()> {
 }
 
 fn delete_local_fork(cargo: &CargoConfig) -> io::Result<()> {
-    let f = ForkedRegistryIndex::new(cargo.get_local_repo_copy_dir());
+    cargo.unset_index_source_override()?;
+    let f = ForkedRegistryIndex::new(cargo.default_forked_index_repository_path());
     f.deinit()?;
-    cargo.delete_source_override()
+    Ok(())
 }
 
 fn fetch_registry(cargo: &CargoConfig) -> io::Result<()> {
-    let local_repo_copy_dir = cargo.get_local_repo_copy_dir();
+    let local_repo_copy_dir = cargo.default_forked_index_repository_path();
     if local_repo_copy_dir.exists() {
         let f = ForkedRegistryIndex::new(local_repo_copy_dir);
         f.update_cloned_repo_fork()?;

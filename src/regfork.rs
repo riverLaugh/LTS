@@ -1,5 +1,6 @@
 const CRATES_IO_INDEX_URL: &str = "https://github.com/rust-lang/crates.io-index";
 
+use serde_json;
 use write;
 use read;
 use io_err;
@@ -264,8 +265,7 @@ impl ForkedRegistryIndex {
         cmd.env("GIT_ASKPASS", "true");
         cmd.arg("clone");
 
-
-        let reusing_crates_io = if let Some(crates_io_index_git) = CargoConfig::standard_crates_io_index_path() {
+        let reusing_crates_io = if let Some(crates_io_index_git) = CargoConfig::cargo_private_crates_io_git_repo_path() {
             cmd.arg(crates_io_index_git);
             true
         } else {
@@ -304,6 +304,19 @@ impl ForkedRegistryIndex {
                 .status()?;
             if !res.success() {
                 return io_err("Failed to update forked index to latest crates.io version");
+            }
+        }
+
+        // Cargo is super slow at cloning from one dir (./fork) to another (~/.cargo/regstry),
+        // and native git can just hardlink, so do that.
+        if let Some(path) = CargoConfig::cargo_private_custom_git_repo_path(&self.git_checkout) {
+            if !path.exists() {
+                let _ = Command::new("git") // this is optional optimization
+                    .arg("clone")
+                    .arg("--bare")
+                    .arg(&self.git_checkout)
+                    .arg(path)
+                    .status()?;
             }
         }
         Ok(())
