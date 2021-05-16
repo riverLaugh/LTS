@@ -1,3 +1,4 @@
+use write;
 use io_err;
 use std::process::Command;
 use std::env;
@@ -118,19 +119,22 @@ impl CargoConfig {
         Ok(())
     }
 
+    pub fn standard_crates_io_index_path() -> Option<PathBuf> {
+        let cargo_home = match get_cargo_home() {
+            Some(p) => p,
+            None => return None,
+        };
+        let path = cargo_home.join("registry").join("index").join("github.com-1ecc6299db9ec823");
+        if path.exists() {
+            Some(path)
+        } else {
+            None
+        }
+    }
 }
 
 
-fn read(path: &Path) -> io::Result<Vec<u8>> {
-    use io::Read;
-    let mut f = fs::File::open(path)?;
-    let mut out = Vec::new();
-    f.read_to_end(&mut out)?;
-    Ok(out)
-}
-
-fn write(path: &Path, data: &[u8]) -> io::Result<()> {
-    use io::Write;
-    let mut f = fs::File::create(path)?;
-    f.write_all(data)
+#[allow(deprecated)]
+fn get_cargo_home() -> Option<PathBuf> {
+    env::var_os("CARGO_HOME").map(PathBuf::from).or_else(|| env::home_dir().map(|d| d.join(".cargo")))
 }
