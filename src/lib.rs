@@ -20,6 +20,62 @@ use std::path::{Path, PathBuf};
 
 const CRATES_IO_INDEX_URL: &str = "https://github.com/rust-lang/crates.io-index";
 
+/// These crates are too old to work with the current compiler (pre-1.0 Rust or pre-NLL bugs)
+const DEFAULT_YANKED: &'static [(&'static str, &'static str)] = &[
+    ("backtrace", "<0.2.3"),
+    ("blake2-rfc", "<0.2.17"),
+    ("cfg-if", "<0.1.9"),
+    ("conduit-mime-types", "<0.7.3"),
+    ("debug_unreachable", "<0.1.1"),
+    ("encoding", "<0.2.30"),
+    ("error", "<0.1.9"),
+    ("gcc", "<0.3.35"),
+    ("getopts", "<0.2.18"),
+    ("gif", "<0.6.0"),
+    ("hyper", "<0.1.13"),
+    ("itertools", "<0.3.25"),
+    ("lazy_static", "<0.1.16"),
+    ("libc", "^0.1"),
+    ("log", "<0.3.6"),
+    ("log", "<0.4.8,0.4"),
+    ("memchr", "<0.1.8"),
+    ("mime", "<0.1.3"),
+    ("mio", "<0.3.7"),
+    ("mio", "<0.6.6,0.6"),
+    ("native-tls", "<0.1.5"),
+    ("nix", "=0.5.0"),
+    ("num", "<0.1.39"),
+    ("num-bigint", "<0.1.44"),
+    ("num-rational", "<0.1.42"),
+    ("num_cpus", "<0.2.13,0.2"),
+    ("parking_lot_core", "<0.1.4"),
+    ("pest_derive", "<1.0.8"),
+    ("phantom", "0.*"),
+    ("pkg-config", "<0.3.9"),
+    ("plugin", "<0.2.6"),
+    ("podio", "<0.1.4"),
+    ("rand", "<0.3.15"),
+    ("rand_isaac", "=0.1.0"),
+    ("route-recognizer", "<0.1.12"),
+    ("rustc-serialize", "<0.3.22"),
+    ("semver", "<0.1.20"),
+    ("solicit", "<0.4.3"),
+    ("tempdir", "<0.3.6"),
+    ("term", "<0.4.6,0.4"),
+    ("tokio-io", "<0.1.13"),
+    ("tokio-reactor", "<0.1.3"),
+    ("twox-hash", "<1.2.0"),
+    ("typeable", "<0.1.2"),
+    ("typemap", "<0.3.3"),
+    ("unsafe-any", "<0.3.0"),
+    ("url", "<0.2.38"),
+    ("url", "<1.6.1,1"),
+    ("void", "<0.0.5"),
+    ("void", "=1.0.0"),
+    ("winapi", "<0.1.23"),
+    ("winapi", "<0.2.5,0.2"),
+];
+
 /// See [the README for the CLI version](https://lib.rs/crates/lts).
 pub fn cli_run() -> io::Result<()> {
     let manifest_dir = get_cargo_manifest_dir();
@@ -28,6 +84,9 @@ pub fn cli_run() -> io::Result<()> {
     match parse_args() {
         Op::Exit => return Ok(()),
         Op::Fail => std::process::exit(1),
+        Op::Setup => {
+            setup_if_needed(&dot_cargo_dir)?;
+        },
         Op::Prefetch => {
             fetch_registry(&dot_cargo_dir)?
         },
@@ -41,11 +100,8 @@ pub fn cli_run() -> io::Result<()> {
                 eprintln!("Nothing to change");
                 std::process::exit(1);
             }
-            let local_repo_copy_dir = ensure_crates_io_fork_exits_and_is_up_to_date(&dot_cargo_dir)?;
-
-            set_index_source_override(&dot_cargo_dir, &local_repo_copy_dir)?;
-
-            set_yanked_state(&local_repo_copy_dir, &specs)?
+            let local_repo_copy_dir = setup_if_needed(&dot_cargo_dir)?;
+            set_yanked_state(&local_repo_copy_dir, &specs, true)?
         }
     }
 
@@ -61,6 +117,7 @@ struct YankSpec {
 enum Op {
     Reset,
     Prefetch,
+    Setup,
     Update,
     Yank(Vec<YankSpec>),
     Exit,
@@ -78,6 +135,7 @@ fn parse_args() -> Op {
     };
 
     match cmd.as_str() {
+        "setup" => Op::Setup,
         "prefetch" => Op::Prefetch,
         "update" => Op::Update,
         "yank" => {
@@ -163,7 +221,7 @@ fn parse_yankspecs<I>(args: I, yank: bool) -> Vec<YankSpec> where I: Iterator<It
     }).collect()
 }
 
-fn set_yanked_state(from_repo_checkout_dir: &Path, specs: &[YankSpec]) -> io::Result<()> {
+fn set_yanked_state(from_repo_checkout_dir: &Path, specs: &[YankSpec], verbose: bool) -> io::Result<()> {
     let mut any_modified = false;
     for spec in specs {
         let crate_file = crate_path(from_repo_checkout_dir, &spec.crate_name);
@@ -184,7 +242,9 @@ fn set_yanked_state(from_repo_checkout_dir: &Path, specs: &[YankSpec]) -> io::Re
                             tmp = serde_json::to_vec(&ver).unwrap();
                             line = &tmp;
                             modified = true;
-                            println!("{} {} yanked = {}", spec.crate_name, ver.vers, spec.yank);
+                            if verbose {
+                                println!("{} {} yanked = {}", spec.crate_name, ver.vers, spec.yank);
+                            }
                         }
                     }
                 }
@@ -225,6 +285,7 @@ fn git_commit(checkout: &Path) -> io::Result<()> {
         .env("GIT_AUTHOR_EMAIL", "lts@lib.rs")
         .env("GIT_COMMITTER_EMAIL", "lts@lib.rs")
         .arg("commit")
+        .arg("--quiet")
         .arg("-m")
         .arg("cargo lts changes")
         .status()?;
@@ -252,6 +313,12 @@ fn get_cargo_manifest_dir() -> PathBuf {
     root_dir
 }
 
+fn setup_if_needed(dot_cargo_dir: &Path) -> io::Result<PathBuf> {
+    let local_repo_copy_dir = ensure_crates_io_fork_exits_and_is_up_to_date(&dot_cargo_dir)?;
+    set_index_source_override(&dot_cargo_dir, &local_repo_copy_dir)?;
+    Ok(local_repo_copy_dir)
+}
+
 fn get_local_repo_copy_dir(dot_cargo_dir: &Path) -> PathBuf {
     dot_cargo_dir.join("cargo-lts-local-registry-fork")
 }
@@ -260,10 +327,22 @@ fn ensure_crates_io_fork_exits_and_is_up_to_date(dot_cargo_dir: &Path) -> io::Re
     let local_repo_copy_dir = get_local_repo_copy_dir(dot_cargo_dir);
     if !local_repo_copy_dir.exists() {
         clone_crates_io_to_local_fork(&local_repo_copy_dir)?;
+        set_default_yanks(&local_repo_copy_dir)?;
     } else {
         update_cloned_repo_fork(&local_repo_copy_dir)?;
     }
     Ok(local_repo_copy_dir)
+}
+
+fn set_default_yanks(local_repo_copy_dir: &Path) -> io::Result<()> {
+    let yanks: Vec<_> = DEFAULT_YANKED.iter().map(|&(crate_name, range)| {
+        YankSpec {
+            crate_name: crate_name.to_string(),
+            range: VersionReq::parse(range).unwrap(),
+            yank: true,
+        }
+    }).collect();
+    set_yanked_state(local_repo_copy_dir, &yanks, false)
 }
 
 fn set_index_source_override(dot_cargo_dir: &Path, local_repo_copy_dir: &Path) -> io::Result<()> {
@@ -296,34 +375,33 @@ registry = '{}'
     write(&config_path, config_toml.as_bytes())
 }
 
-fn update_cloned_repo_fork(repo_path: &Path) -> io::Result<()> {
-    println!("Updating index");
-
-    let mut cmd = Command::new("git");
-    cmd.current_dir(repo_path);
-    cmd.env("GIT_ASKPASS", "true");
-    cmd.arg("fetch");
-
-    if let Some(crates_io_index_git) = standard_crates_io_index_path() {
-        force_update_crates_io_index()?;
-        cmd.arg(crates_io_index_git);
-    } else {
-        cmd.arg("--depth=1");
-        cmd.arg(CRATES_IO_INDEX_URL);
-    }
-
-    let res = cmd.status()?;
+fn fetch_crates_io_into_repo(repo_path: &Path) -> io::Result<()> {
+    // can't reuse local on-disk index, because Cargo doesn't always update HEAD
+    let res = Command::new("git")
+      .current_dir(repo_path)
+      .env("GIT_ASKPASS", "true")
+      .arg("fetch")
+      .arg(CRATES_IO_INDEX_URL)
+      .status()?;
     if !res.success() {
         return io_err("Update of crates.io index failed");
     }
+    Ok(())
+}
 
-    let mut cmd = Command::new("git");
-    cmd.current_dir(repo_path);
-    cmd.arg("merge");
-    cmd.arg("-Xtheirs");
-    cmd.arg("FETCH_HEAD");
+fn update_cloned_repo_fork(repo_path: &Path) -> io::Result<()> {
+    println!("Updating index");
+    fetch_crates_io_into_repo(repo_path)?;
 
-    let res = cmd.status()?;
+    let res = Command::new("git")
+        .current_dir(repo_path)
+        .arg("merge")
+        .arg("-Xtheirs")
+        .arg("--allow-unrelated-histories")
+        .arg("-m")
+        .arg("cargo lts update")
+        .arg("FETCH_HEAD")
+        .status()?;
     if !res.success() {
         return io_err("Merge of crates.io index failed");
     }
@@ -374,7 +452,7 @@ fn clone_crates_io_to_local_fork(dest: &Path) -> io::Result<()> {
     let _ = fs::create_dir_all(parent_dir); // ensure parent dir exists (.cargo)
 
     // clone to a temp dir to avoid leaving broken checkout if interrupted
-    let dest_tmp = parent_dir.join(".lts-temp-checkout");
+    let dest_tmp = parent_dir.join(".cargo-lts-making-local-fork");
     let _ = fs::remove_dir_all(&dest_tmp);
 
 
@@ -382,15 +460,15 @@ fn clone_crates_io_to_local_fork(dest: &Path) -> io::Result<()> {
     cmd.env("GIT_ASKPASS", "true");
     cmd.arg("clone");
 
-    if let Some(crates_io_index_git) = standard_crates_io_index_path() {
-        println!("Reusing {}", crates_io_index_git.display());
-        force_update_crates_io_index()?;
+
+    let reusing_crates_io = if let Some(crates_io_index_git) = standard_crates_io_index_path() {
         cmd.arg(crates_io_index_git);
+        true
     } else {
-        println!("Cargo index copy not found, cloning a fresh one");
         cmd.arg("--depth=1");
         cmd.arg(CRATES_IO_INDEX_URL);
-    }
+        false
+    };
 
     assert!(!dest_tmp.exists());
     cmd.arg(&dest_tmp);
@@ -407,6 +485,22 @@ fn clone_crates_io_to_local_fork(dest: &Path) -> io::Result<()> {
     remove_git_origin(&dest_tmp)?;
 
     fs::rename(&dest_tmp, dest)?;
+
+    // local crates.io copy could have been old
+    // but fetch with it as a reference should be faster
+    // (not using git's alternatives feature, because it breaks when crates.io squashes)
+    if reusing_crates_io {
+        fetch_crates_io_into_repo(dest)?;
+        let res = Command::new("git")
+            .current_dir(dest)
+            .arg("reset")
+            .arg("--hard")
+            .arg("FETCH_HEAD")
+            .status()?;
+        if !res.success() {
+            return io_err("Failed to update forked index to latest crates.io version");
+        }
+    }
     Ok(())
 }
 

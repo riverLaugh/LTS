@@ -1,6 +1,6 @@
 [package]
 name = "lts"
-version = "0.3.0-alpha.1"
+version = "0.3.0"
 description = "Yank other people's crates. Helpful for using old compilers and avoiding broken deps"
 authors = ["Kornel <kornel@geekhood.net>"]
 categories = ["development-tools::cargo-plugins"]

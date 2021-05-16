@@ -37,7 +37,7 @@ where the `SPEC` is crate's name followed by semver range, without a space in be
 cargo lts yank "serde>=1.0.118"
 ```
 
-On the first run it will set up the registry fork, which may take a minute. After yanking or unyanking run `cargo update` to apply the changes to your `Cargo.lock`.
+On the first run it will set up the registry fork, which may take a minute. After yanking or unyanking run `cargo update` or `cargo generate-lockfile` to apply the changes to your `Cargo.lock`.
 
 Multiple crates can be yanked at the same time:
 
