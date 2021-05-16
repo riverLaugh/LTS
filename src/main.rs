@@ -35,6 +35,13 @@ fn run() -> io::Result<()> {
     match parse_args() {
         Op::Exit => return Ok(()),
         Op::Fail => std::process::exit(1),
+        Op::Prefetch => {
+            fetch_registry(&dot_cargo_dir)?
+        },
+        Op::Update => {
+            fetch_registry(&dot_cargo_dir)?;
+            cargo_update_from_forked_index(&manifest_dir)?;
+        },
         Op::Reset => delete_local_fork(&dot_cargo_dir)?,
         Op::Yank(specs) => {
             if specs.is_empty() {
@@ -44,7 +51,6 @@ fn run() -> io::Result<()> {
             let local_repo_copy_dir = ensure_crates_io_fork_exits_and_is_up_to_date(&dot_cargo_dir)?;
 
             set_index_source_override(&dot_cargo_dir, &local_repo_copy_dir)?;
-            cargo_update_forked_index(&manifest_dir)?;
 
             for spec in &specs {
                 set_yanked_state(&local_repo_copy_dir, spec)?
@@ -63,6 +69,8 @@ struct YankSpec {
 
 enum Op {
     Reset,
+    Prefetch,
+    Update,
     Yank(Vec<YankSpec>),
     Exit,
     Fail,
@@ -79,6 +87,8 @@ fn parse_args() -> Op {
     };
 
     match cmd.as_str() {
+        "prefetch" => Op::Prefetch,
+        "update" => Op::Update,
         "yank" => {
             Op::Yank(parse_yankspecs(args, true))
         },
@@ -378,7 +388,7 @@ fn force_update_crates_io_index() -> io::Result<()> {
     Ok(())
 }
 
-fn cargo_update_forked_index(manifest_dir: &Path) -> io::Result<()> {
+fn cargo_update_from_forked_index(manifest_dir: &Path) -> io::Result<()> {
     let res = Command::new("cargo")
         .current_dir(manifest_dir)
         .arg("update")
@@ -430,6 +440,16 @@ fn delete_local_fork(dot_cargo_dir: &Path) -> io::Result<()> {
         }
     }
 
+    Ok(())
+}
+
+fn fetch_registry(dot_cargo_dir: &Path) -> io::Result<()> {
+    let local_repo_copy_dir = get_local_repo_copy_dir(dot_cargo_dir);
+    if local_repo_copy_dir.exists() {
+        update_cloned_repo_fork(&local_repo_copy_dir)?;
+    } else {
+        force_update_crates_io_index()?;
+    }
     Ok(())
 }
 
