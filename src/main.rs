@@ -1,3 +1,9 @@
+#[macro_use]
+extern crate serde_derive;
+extern crate semver;
+extern crate serde;
+extern crate serde_json;
+
 use semver::VersionReq;
 use semver::Version as SemVer;
 use std::fmt::Write;
@@ -151,11 +157,12 @@ fn set_yanked_state(from_repo: &Path, spec: &YankSpec) -> io::Result<()> {
     let jsons = fs::read(&crate_file)?;
     let mut lines_out = Vec::with_capacity(jsons.len());
     let mut modified = false;
-    for mut line in jsons.split(|&c| c == b'\n') {
-        if line.is_empty() {
+    for line1 in jsons.split(|&c| c == b'\n') {
+        if line1.is_empty() {
             continue;
         }
         let tmp;
+        let mut line = line1;
         if let Ok(mut ver) = serde_json::from_slice::<CrateVersion>(line) {
             if ver.yanked != spec.yank {
                 if let Ok(semver) = SemVer::parse(&ver.vers) {
@@ -283,7 +290,11 @@ fn get_cargo_home() -> Option<PathBuf> {
 fn standard_crates_io_index_path() -> Option<PathBuf> {
     let path = get_cargo_home()?
         .join("registry").join("index").join("github.com-1ecc6299db9ec823");
-    path.exists().then(|| path)
+    if path.exists() {
+        Some(path)
+    } else {
+        None
+    }
 }
 
 fn remove_git_origin(git_repo_path: &Path) -> io::Result<()> {
@@ -399,7 +410,7 @@ fn delete_local_fork(dot_cargo_dir: &Path) -> io::Result<()> {
 
     if config_path.exists() {
         let config_toml = filtered_config_toml(&config_path)?;
-        if config_toml.trim_start().is_empty() {
+        if config_toml.trim_left().is_empty() {
             fs::remove_file(config_path)?;
         } else {
             fs::write(&config_path, config_toml.as_bytes())?;
@@ -410,10 +421,7 @@ fn delete_local_fork(dot_cargo_dir: &Path) -> io::Result<()> {
 }
 
 fn crate_path(index_root: &Path, crate_name: &str) -> PathBuf {
-    assert!(index_root.is_absolute());
-
-    let mut new_path = PathBuf::with_capacity(100 + crate_name.len() + 6);
-    new_path.push(index_root);
+    let mut new_path = PathBuf::from(index_root);
 
     match crate_name.len() {
         0 => {},
@@ -434,7 +442,7 @@ fn crate_path(index_root: &Path, crate_name: &str) -> PathBuf {
 }
 
 /// A single version of a crate published to the index
-#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct CrateVersion {
     name: String,
     vers: String,
