@@ -1,6 +1,6 @@
 # LTS for Rust dependencies
 
-Do you need a Long-Term-Support version of Rust? It's not going to happen. BUT here's an alternative: get rid of incompatible dependencies. This tool creates a local fork of crates.io registry and lets you yank any crates from it.
+Do you need a Long-Term-Support version of Rust? It's not going to happen. BUT here's an alternative: get rid of incompatible dependencies. This tool creates a local fork of the crates.io registry and lets you yank any crates from it.
 
 ## How does it work?
 
