@@ -6,18 +6,16 @@ extern crate semver;
 extern crate serde;
 extern crate serde_json;
 
+use cargo::CargoConfig;
 use semver::VersionReq;
 use semver::Version as SemVer;
-use std::fmt::Write;
-use std::io::BufRead;
-use std::io::BufReader;
-use fs::File;
 use std::io;
 use std::fs;
 use std::env;
 use std::process::Command;
 use std::path::{Path, PathBuf};
 
+mod cargo;
 mod cargo_repository_hash;
 
 const CRATES_IO_INDEX_URL: &str = "https://github.com/rust-lang/crates.io-index";
@@ -80,8 +78,7 @@ const DEFAULT_YANKED: &'static [(&'static str, &'static str)] = &[
 
 /// See [the README for the CLI version](https://lib.rs/crates/lts).
 pub fn cli_run() -> io::Result<()> {
-    let manifest_dir = get_cargo_manifest_dir();
-    let cargo_config = CargoConfig::new(manifest_dir.join(".cargo"));
+    let cargo_config = CargoConfig::new();
 
     match parse_args() {
         Op::Exit => return Ok(()),
@@ -94,7 +91,7 @@ pub fn cli_run() -> io::Result<()> {
         },
         Op::Update => {
             fetch_registry(&cargo_config)?;
-            cargo_update_from_forked_index(&manifest_dir)?;
+            cargo_config.cargo_update_from_current_index()?;
         },
         Op::Reset => delete_local_fork(&cargo_config)?,
         Op::Yank(specs) => {
@@ -223,107 +220,11 @@ fn parse_yankspecs<I>(args: I, yank: bool) -> Vec<YankSpec> where I: Iterator<It
     }).collect()
 }
 
-fn get_cargo_manifest_dir() -> PathBuf {
-    if let Some(dir) = env::var_os("CARGO_MANIFEST_DIR") {
-        return PathBuf::from(dir);
-    }
-    let mut root_dir = env::current_dir().expect("cwd");
-    {
-        let tmp = root_dir.clone();
-        let mut tmp = tmp.as_path();
-        while let Some(new_tmp) = tmp.parent() {
-            if new_tmp.join("Cargo.toml").exists() {
-                root_dir = new_tmp.to_owned();
-            }
-            tmp = new_tmp;
-        }
-    }
-    root_dir
-}
-
 fn setup_if_needed(cargo: &CargoConfig) -> io::Result<ForkedRegistryIndex> {
     let fork = ForkedRegistryIndex::new(cargo.get_local_repo_copy_dir());
     fork.init()?;
-    cargo.set_index_source_override(&fork)?;
+    cargo.set_index_source_override(&fork.git_dir())?;
     Ok(fork)
-}
-
-struct CargoConfig {
-    dot_cargo_dir: PathBuf,
-}
-
-impl CargoConfig {
-    pub fn new(dot_cargo_path: PathBuf) -> Self {
-        CargoConfig {
-            dot_cargo_dir: dot_cargo_path,
-        }
-    }
-
-    fn get_local_repo_copy_dir(&self) -> PathBuf {
-        self.dot_cargo_dir.join("cargo-lts-local-registry-fork")
-    }
-
-    fn set_index_source_override(&self, fork: &ForkedRegistryIndex) -> io::Result<()> {
-        let config_path = self.dot_cargo_dir.join("config");
-
-        let mut config_toml = if config_path.exists() {
-            Self::filtered_config_toml(&config_path)?
-        } else {
-            String::new()
-        };
-
-        let repo_path = fork.git_dir();
-
-        assert!(repo_path.is_absolute());
-        let repo_url = format!("file://{}", repo_path.display()).replace(' ', "%20");
-
-        write!(&mut config_toml, "# delete this to restore to the default registry
-    [source.crates-io]
-    replace-with = 'lts-repo-local-fork'
-
-    [source.lts-repo-local-fork] # `cargo lts` modified copy of the crates.io registry
-    registry = '{}'
-    ", repo_url).unwrap();
-
-        write(&config_path, config_toml.as_bytes())
-    }
-
-    fn delete_source_override(&self) -> io::Result<()> {
-        let config_path = self.dot_cargo_dir.join("config");
-
-        if config_path.exists() {
-            let config_toml = Self::filtered_config_toml(&config_path)?;
-            if config_toml.trim_left().is_empty() {
-                fs::remove_file(config_path)?;
-            } else {
-                write(&config_path, config_toml.as_bytes())?;
-            }
-        }
-        Ok(())
-    }
-
-    fn filtered_config_toml(config_path: &Path) -> io::Result<String> {
-        let mut config_toml = String::new();
-
-        let f = BufReader::new(File::open(config_path)?);
-        let mut skipping = false;
-        for line in f.lines() {
-            let line = line.unwrap();
-            let has_our_comment = line.starts_with("# delete this to restore to the default registry");
-            if line.starts_with('[') || has_our_comment {
-                skipping = has_our_comment
-                    || line.starts_with("[source.crates-io]")
-                    || line.starts_with("[source.lts-repo-");
-            }
-
-            if !skipping {
-                config_toml.push_str(&line);
-                config_toml.push('\n');
-            }
-        }
-
-        Ok(config_toml)
-    }
 }
 
 struct ForkedRegistryIndex {
@@ -608,20 +509,6 @@ fn force_update_crates_io_index() -> io::Result<()> {
         .output()?; // don't print anything
     Ok(())
 }
-
-fn cargo_update_from_forked_index(manifest_dir: &Path) -> io::Result<()> {
-    let res = Command::new("cargo")
-        .current_dir(manifest_dir)
-        .arg("update")
-        .status()?;
-
-    if !res.success() {
-        return io_err("Cargo update of forked index failed");
-    }
-
-    Ok(())
-}
-
 
 fn delete_local_fork(cargo: &CargoConfig) -> io::Result<()> {
     let f = ForkedRegistryIndex::new(cargo.get_local_repo_copy_dir());
