@@ -18,7 +18,17 @@ use std::path::{Path, PathBuf};
 
 const CRATES_IO_INDEX_URL: &str = "https://github.com/rust-lang/crates.io-index";
 
-fn main() -> io::Result<()> {
+fn main() {
+    match run() {
+        Ok(()) => {},
+        Err(e) => {
+            eprintln!("error: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run() -> io::Result<()> {
     let manifest_dir = get_cargo_manifest_dir();
     let dot_cargo_dir = manifest_dir.join(".cargo");
 
@@ -122,9 +132,9 @@ Reset back to normal crates.io registry:
 );
 }
 
-fn parse_yankspecs(args: impl Iterator<Item=String>, yank: bool) -> Vec<YankSpec> {
+fn parse_yankspecs<I>(args: I, yank: bool) -> Vec<YankSpec> where I: Iterator<Item=String> {
     args.filter_map(|arg| {
-        let pos = match arg.as_bytes().iter().position(|&c| !c.is_ascii_alphanumeric() && c != b'_' && c != b'-') {
+        let pos = match arg.as_bytes().iter().position(|&c| !(c as char).is_alphanumeric() && c != b'_' && c != b'-') {
             Some(p) => p,
             None => {
                 eprintln!("Spec '{arg}' doesn't contain semver version. It should be like '{arg}<=0.0.1'", arg = arg);
@@ -154,7 +164,7 @@ fn parse_yankspecs(args: impl Iterator<Item=String>, yank: bool) -> Vec<YankSpec
 
 fn set_yanked_state(from_repo: &Path, spec: &YankSpec) -> io::Result<()> {
     let crate_file = crate_path(from_repo, &spec.crate_name);
-    let jsons = fs::read(&crate_file)?;
+    let jsons = read(&crate_file)?;
     let mut lines_out = Vec::with_capacity(jsons.len());
     let mut modified = false;
     for line1 in jsons.split(|&c| c == b'\n') {
@@ -180,7 +190,7 @@ fn set_yanked_state(from_repo: &Path, spec: &YankSpec) -> io::Result<()> {
         lines_out.push(b'\n');
     }
     if modified {
-        fs::write(&crate_file, &lines_out)?;
+        write(&crate_file, &lines_out)?;
     }
     Ok(())
 }
@@ -244,7 +254,7 @@ replace-with = 'lts-repo-local-fork'
 registry = '{}'
 ", repo_url).unwrap();
 
-    fs::write(&config_path, config_toml.as_bytes())
+    write(&config_path, config_toml.as_bytes())
 }
 
 fn update_cloned_repo_fork(repo_path: &Path) -> io::Result<()> {
@@ -288,8 +298,11 @@ fn get_cargo_home() -> Option<PathBuf> {
 }
 
 fn standard_crates_io_index_path() -> Option<PathBuf> {
-    let path = get_cargo_home()?
-        .join("registry").join("index").join("github.com-1ecc6299db9ec823");
+    let cargo_home = match get_cargo_home() {
+        Some(p) => p,
+        None => return None,
+    };
+    let path = cargo_home.join("registry").join("index").join("github.com-1ecc6299db9ec823");
     if path.exists() {
         Some(path)
     } else {
@@ -413,7 +426,7 @@ fn delete_local_fork(dot_cargo_dir: &Path) -> io::Result<()> {
         if config_toml.trim_left().is_empty() {
             fs::remove_file(config_path)?;
         } else {
-            fs::write(&config_path, config_toml.as_bytes())?;
+            write(&config_path, config_toml.as_bytes())?;
         }
     }
 
@@ -451,4 +464,18 @@ pub struct CrateVersion {
     links: Option<String>,
     cksum: String,
     yanked: bool,
+}
+
+fn read(path: &Path) -> io::Result<Vec<u8>> {
+    use io::Read;
+    let mut f = fs::File::open(path)?;
+    let mut out = Vec::new();
+    f.read_to_end(&mut out)?;
+    Ok(out)
+}
+
+fn write(path: &Path, data: &[u8]) -> io::Result<()> {
+    use io::Write;
+    let mut f = fs::File::create(path)?;
+    f.write_all(data)
 }
