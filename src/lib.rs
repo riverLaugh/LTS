@@ -1,3 +1,5 @@
+#![allow(deprecated)] // supporting old versions
+
 #[macro_use]
 extern crate serde_derive;
 extern crate semver;
@@ -18,6 +20,7 @@ use std::path::{Path, PathBuf};
 
 const CRATES_IO_INDEX_URL: &str = "https://github.com/rust-lang/crates.io-index";
 
+/// See [the README for the CLI version](https://lib.rs/crates/lts).
 pub fn cli_run() -> io::Result<()> {
     let manifest_dir = get_cargo_manifest_dir();
     let dot_cargo_dir = manifest_dir.join(".cargo");
@@ -504,7 +507,7 @@ fn crate_path(index_root: &Path, crate_name: &str) -> PathBuf {
 
 /// A single version of a crate published to the index
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct CrateVersion {
+struct CrateVersion {
     name: String,
     vers: String,
     deps: Vec<serde_json::Value>,

@@ -7,7 +7,7 @@ categories = ["development-tools::cargo-plugins"]
 homepage = "https://lib.rs/crates/lts"
 repository = "https://gitlab.com/kornelski/LTS"
 keywords = ["long-term-support", "yank", "registry", "dependencies", "back-compat"]
-license = "Apache 2.0 OR MIT"
+license = "Apache-2.0 OR MIT"
 readme = "README.md"
 
 [[bin]]
