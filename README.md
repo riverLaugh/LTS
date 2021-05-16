@@ -11,7 +11,7 @@ The local fork can be modified at will. Currently yanking and unyanking of arbit
 ## Installation
 
 ```sh
-cargo install -f lts
+cargo install -f lts --vers=0.3.0-alpha.1
 ```
 
 ### Requirements

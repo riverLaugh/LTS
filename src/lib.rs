@@ -18,17 +18,7 @@ use std::path::{Path, PathBuf};
 
 const CRATES_IO_INDEX_URL: &str = "https://github.com/rust-lang/crates.io-index";
 
-fn main() {
-    match run() {
-        Ok(()) => {},
-        Err(e) => {
-            eprintln!("error: {}", e);
-            std::process::exit(1);
-        }
-    }
-}
-
-fn run() -> io::Result<()> {
+pub fn cli_run() -> io::Result<()> {
     let manifest_dir = get_cargo_manifest_dir();
     let dot_cargo_dir = manifest_dir.join(".cargo");
 
