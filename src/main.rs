@@ -166,7 +166,7 @@ fn main() {
     }
 
     let cargo_local_dir = prepare_cargo_dir();
-
+    
     if unset {
         unset_custom_index_url(&cargo_local_dir);
         return;

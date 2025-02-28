@@ -25,13 +25,26 @@ use std::os::unix::fs::symlink;
 mod minidate;
 pub use minidate::Date;
 
-const SNAPSHOT_BRANCHES: &'static [&'static str; 6] = &[
+const SNAPSHOT_BRANCHES: &'static [&'static str; 19] = &[
     "snapshot-2018-09-26",
     "snapshot-2019-10-17",
     "snapshot-2020-03-25",
     "snapshot-2020-08-04",
     "snapshot-2020-11-20",
     "snapshot-2021-05-05",
+    "snapshot-2021-07-02",
+    "snapshot-2021-09-24",
+    "snapshot-2021-12-21",
+    "snapshot-2022-03-02",
+    "snapshot-2022-07-06",
+    "snapshot-2022-08-31",
+    "snapshot-2022-12-19",
+    "snapshot-2023-01-12",
+    "snapshot-2023-04-03",
+    "snapshot-2023-06-30",
+    "snapshot-2023-12-03",
+    "snapshot-2024-03-11",
+    "snapshot-2024-05-18",
 ];
 
 mod cargo_repository_hash;
@@ -113,8 +126,10 @@ impl LTS {
         if bare {
             cmd.arg("--bare");
         }
+        
         cmd.arg(&self.git_dir).arg(&fork_destination_dir);
         check(cmd.output()?)?;
+        
 
         let tmp;
         let fork_git_dir = if bare {
@@ -165,6 +180,7 @@ impl LTS {
 }
 
 fn git(git_dir: &Path, args: &[&str]) -> io::Result<String> {
+    // println!("{:?}",args);
     let out = Command::new("git")
         .env("GIT_AUTHOR_NAME", "LTS")
         .env("GIT_COMMITTER_NAME", "LTS")
