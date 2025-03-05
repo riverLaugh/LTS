@@ -45,6 +45,8 @@ const SNAPSHOT_BRANCHES: &'static [&'static str; 19] = &[
     "snapshot-2023-12-03",
     "snapshot-2024-03-11",
     "snapshot-2024-05-18",
+    "snapshot-2024-09-08",
+    "snapshot-2024-11-27",
 ];
 
 mod cargo_repository_hash;
