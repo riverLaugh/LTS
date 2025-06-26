@@ -124,7 +124,8 @@ impl LTS {
         let _ = fs::remove_dir_all(&fork_destination_dir); // just in case
 
         let mut cmd = Command::new("git");
-        cmd.args(&["clone", "--single-branch", "--branch", &branch.name, "--reference", &self.git_dir]);
+        cmd.args(&["clone", "--single-branch", "--branch", &branch.name]);
+        cmd.arg("--reference").arg(&self.git_dir); // .arg() 可以正确处理 &PathBuf
         if bare {
             cmd.arg("--bare");
         }
