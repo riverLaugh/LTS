@@ -11,7 +11,7 @@
 //!
 //! This documentation is for a library interface of `cargo-lts`.
 //! The library interface makes a shallow git clone of crates-io repository frozen at a specific point in time.
-use std::os::unix::fs::symlink;
+
 use std::env;
 use std::fs;
 use std::io;
@@ -20,6 +20,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::process::Output;
 #[cfg(unix)]
+use std::os::unix::fs::symlink;
 
 mod minidate;
 pub use minidate::Date;
@@ -120,38 +121,17 @@ impl LTS {
     ///
     /// Returns `file://` URL of the new repo
     pub fn clone_to(&self, branch: &Branch, fork_destination_dir: &Path, bare: bool) -> io::Result<String> {
-        // --- 步骤 1: 准备阶段 ---
-        println!("\n[+] Step 1: Entering `clone_to` function with the following arguments:");
-        println!("    - Branch Name: '{}'", &branch.name);
-        println!("    - Branch Head Commit: '{}'", &branch.head);
-        println!("    - Destination Directory: '{}'", fork_destination_dir.display());
-        println!("    - Is Bare Clone: {}", bare);
-        
-        // 为了防止上一次失败的残留，先清理目标目录。
-        println!("\n[+] Step 2: Cleaning up destination directory (if it exists)...");
-       
         let _ = fs::remove_dir_all(&fork_destination_dir); // just in case
-        println!("    - Cleanup complete.");
-    
-        // --- 步骤 3: 执行第一步 - 标准克隆 ---
-        println!("\n[+] Step 3: Performing a standard clone (without --reference)...");
+
         let mut cmd = Command::new("git");
-        // 注意：这里不再有 --reference
-        cmd.args(&["clone", "--single-branch"]);
-        cmd.arg("--branch").arg(&branch.name);
+        cmd.args(&["clone", "--single-branch", "--branch", &branch.name]);
+        cmd.arg("--reference").arg(&self.git_dir); // .arg() 可以正确处理 &PathBuf
         if bare {
             cmd.arg("--bare");
         }
         cmd.arg(&self.git_dir).arg(&fork_destination_dir);
-        
-        println!("    - Executing command: {:?}", cmd);
-       
         check(cmd.output()?)?;
-        println!("    - `git clone` executed successfully (created a full copy for now).");
-    
-        // --- 步骤 4: 确定新仓库的 .git 目录和 objects 目录路径 ---
-        // 这部分逻辑被提前并合并，因为我们马上需要用到 objects_dir 的路径
-        println!("\n[+] Step 4: Preparing paths for surgical replacement of `objects` directory...");
+
         let tmp;
         let fork_git_dir = if bare {
             fork_destination_dir
@@ -159,67 +139,20 @@ impl LTS {
             tmp = fork_destination_dir.join(".git");
             &tmp
         };
-        let objects_dir_to_replace = fork_git_dir.join("objects");
-        let source_objects_dir = self.git_dir.join("objects");
-        println!("    - Target `objects` dir to be replaced: '{}'", objects_dir_to_replace.display());
-        println!("    - Source `objects` dir to link from: '{}'", source_objects_dir.display());
-    
-        // --- 步骤 5: 执行第二步和第三步 - 手术替换 objects 目录 ---
-        println!("\n[+] Step 5: Replacing `objects` directory with a symbolic link...");
-    
-        println!("    - Step 5.1: Removing the newly cloned (large) `objects` directory...");
-       
-        fs::remove_dir_all(&objects_dir_to_replace)?;
-        println!("      - Removed successfully.");
-    
-        println!("    - Step 5.2: Creating a symbolic link to the shared `objects` directory...");
-       
-        // #[cfg(unix)] 是为了确保这段代码只在支持符号链接的 Unix-like 系统上编译
-        #[cfg(unix)]
-        symlink(&source_objects_dir, &objects_dir_to_replace)?;
-        // 对于 Windows，可能需要更复杂的处理，但 cargo-lts 主要面向 Unix-like 环境
-        #[cfg(not(unix))]
-        {
-            // 在非 Unix 系统上，我们无法创建符号链接，所以只能打印一个警告。
-            // 这里的代码不会执行，因为我们之前的环境是 Linux。
-            println!("      - WARNING: Symbolic link creation is not supported on this OS. Space optimization will not work.");
-        }
-        println!("      - Symbolic link created successfully.");
-    
-        // --- 步骤 6: 执行 Git "修复" 操作 ---
-        // 这部分逻辑保持不变，因为它在新仓库的配置上操作，与 objects 如何存储无关。
-        println!("\n[+] Step 6: Performing post-clone fixups to ensure Cargo compatibility...");
-        println!("    - Running `git update-ref HEAD ...` to point HEAD directly to the correct commit.");
-       
+
+        // do fixups, so that cargo can find proper dir
         git(&fork_git_dir, &["update-ref", "HEAD", &branch.head])?;
-        println!("      - HEAD updated successfully.");
-    
         if bare {
-            println!("    - For bare repo, creating a 'master' branch pointing to the correct commit.");
-           
             git(&fork_git_dir, &["branch", "master", &branch.head])?;
-            println!("      - 'master' branch created successfully.");
         } else {
-            println!("    - For normal repo, creating and checking out a 'master' branch.");
-           
             git(&fork_git_dir, &["checkout", "-b", "master", &branch.head])?;
-            println!("      - Checked out new 'master' branch successfully.");
         }
-    
-        // --- 步骤 7: 生成并返回 file:// URL ---
-        println!("\n[+] Step 7: Generating the file:// URL for the new local repository...");
+
         let fork_repo_abs = fs::canonicalize(&fork_git_dir)?;
         let fork_url = format!("file://{}", fork_repo_abs.display());
-        println!("    - Absolute path: '{}'", fork_repo_abs.display());
-        println!("    - Generated URL: '{}'", fork_url);
-    
-        // --- 步骤 8: 共享缓存目录 ---
-        println!("\n[+] Step 8: Setting up shared cache by creating symbolic links...");
-       
+
         self.make_cache_shared(&fork_url);
-        println!("    - Cache sharing setup complete.");
-    
-        println!("\n[+] `clone_to` function finished successfully with forced space optimization.");
+
         Ok(fork_url)
     }
 
