@@ -124,12 +124,14 @@ impl LTS {
         let _ = fs::remove_dir_all(&fork_destination_dir); // just in case
 
         let mut cmd = Command::new("git");
-        cmd.args(&["clone", "--single-branch", "--branch", &branch.name, "--reference", &self.git_dir]);
+        cmd.args(&["clone", "--single-branch", "--branch", &branch.name]);
         if bare {
             cmd.arg("--bare");
         }
+        
         cmd.arg(&self.git_dir).arg(&fork_destination_dir);
         check(cmd.output()?)?;
+        
 
         let tmp;
         let fork_git_dir = if bare {
